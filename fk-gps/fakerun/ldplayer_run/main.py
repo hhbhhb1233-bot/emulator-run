@@ -191,7 +191,6 @@ class LocationSender:
 
     def _find_adb(self):
         """查找 adb 可执行文件"""
-        # 常见 adb 路径
         candidates = [
             "adb",
             "C:/Program Files (x86)/LDPlayer/adb.exe",
@@ -201,10 +200,13 @@ class LocationSender:
             "D:/Program Files/LDPlayer8/adb.exe",
             str(Path.home() / "AppData/Local/Android/Sdk/platform-tools/adb.exe"),
             str(Path.home() / "AppData/Local/LDPlayer9/adb.exe"),
-            # 项目内便携版 LDPlayer
-            str(Path(__file__).parent.parent.parent / "leidian/LDPlayer9/adb.exe"),
-            str(Path(__file__).parent.parent.parent.parent / "雷电模拟器/adb.exe"),
         ]
+        # 从注册表获取安装路径
+        reg_paths = self._find_from_registry()
+        candidates = reg_paths + candidates
+        # 全盘搜索（在已有候选路径之后）
+        if not any(candidates):
+            candidates += self._scan_drives("adb.exe")
         for c in candidates:
             try:
                 subprocess.run([c, "version"], capture_output=True, timeout=2)
@@ -223,10 +225,13 @@ class LocationSender:
             "D:/Program Files/LDPlayer9/ldconsole.exe",
             "D:/Program Files/LDPlayer8/ldconsole.exe",
             str(Path.home() / "AppData/Local/LDPlayer9/ldconsole.exe"),
-            # 项目内便携版 LDPlayer
-            str(Path(__file__).parent.parent.parent / "leidian/LDPlayer9/ldconsole.exe"),
-            str(Path(__file__).parent.parent.parent.parent / "雷电模拟器/ldconsole.exe"),
         ]
+        # 从注册表获取安装路径
+        reg_paths = self._find_from_registry()
+        candidates = reg_paths + candidates
+        # 全盘搜索
+        if not any(candidates):
+            candidates += self._scan_drives("ldconsole.exe")
         for c in candidates:
             try:
                 subprocess.run([c, "list"], capture_output=True, timeout=2)
@@ -234,6 +239,56 @@ class LocationSender:
             except (FileNotFoundError, subprocess.TimeoutExpired):
                 continue
         return None
+
+    def _find_from_registry(self) -> list:
+        """从 Windows 注册表查找 LDPlayer 安装路径"""
+        paths = []
+        try:
+            import winreg
+            keys = [
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\LDPlayer\LDPlayer9"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\LDPlayer\LDPlayer8"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\LDPlayer\LDPlayer9"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\LDPlayer\LDPlayer8"),
+            ]
+            for hive, key_path in keys:
+                try:
+                    with winreg.OpenKey(hive, key_path) as key:
+                        install_dir, _ = winreg.QueryValueEx(key, "InstallDir")
+                        if install_dir:
+                            adb = str(Path(install_dir) / "adb.exe")
+                            ldconsole = str(Path(install_dir) / "ldconsole.exe")
+                            paths.append(adb)
+                            paths.append(ldconsole)
+                except (FileNotFoundError, OSError):
+                    continue
+        except ImportError:
+            pass
+        return paths
+
+    @staticmethod
+    def _scan_drives(exe_name: str) -> list:
+        """全盘搜索 ldconsole 或 adb（只在根目录的 Program Files 下找，不深搜）"""
+        import string
+        results = []
+        for letter in string.ascii_uppercase:
+            drive = f"{letter}:"
+            if not Path(drive).exists():
+                continue
+            base = Path(drive) / "Program Files"
+            if base.exists():
+                for ld_dir in base.glob("LDPlayer*"):
+                    target = ld_dir / exe_name
+                    if target.exists():
+                        results.append(str(target))
+            # 也搜 Program Files (x86)
+            base86 = Path(drive) / "Program Files (x86)"
+            if base86.exists():
+                for ld_dir in base86.glob("LDPlayer*"):
+                    target = ld_dir / exe_name
+                    if target.exists():
+                        results.append(str(target))
+        return results
 
     def _adb_cmd(self):
         cmd = [self.adb_path or self._find_adb()]

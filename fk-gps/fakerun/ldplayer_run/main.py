@@ -197,6 +197,8 @@ class LocationSender:
             "C:/Program Files (x86)/LDPlayer/adb.exe",
             "C:/Program Files/LDPlayer9/adb.exe",
             "C:/Program Files/LDPlayer8/adb.exe",
+            "D:/Program Files/LDPlayer9/adb.exe",
+            "D:/Program Files/LDPlayer8/adb.exe",
             str(Path.home() / "AppData/Local/Android/Sdk/platform-tools/adb.exe"),
             str(Path.home() / "AppData/Local/LDPlayer9/adb.exe"),
             # 项目内便携版 LDPlayer
@@ -218,6 +220,8 @@ class LocationSender:
             "C:/Program Files (x86)/LDPlayer/ldconsole.exe",
             "C:/Program Files/LDPlayer9/ldconsole.exe",
             "C:/Program Files/LDPlayer8/ldconsole.exe",
+            "D:/Program Files/LDPlayer9/ldconsole.exe",
+            "D:/Program Files/LDPlayer8/ldconsole.exe",
             str(Path.home() / "AppData/Local/LDPlayer9/ldconsole.exe"),
             # 项目内便携版 LDPlayer
             str(Path(__file__).parent.parent.parent / "leidian/LDPlayer9/ldconsole.exe"),

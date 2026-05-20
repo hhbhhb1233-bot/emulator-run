@@ -7,7 +7,7 @@ routeFile: "route.txt"
 
 # 速度模式: walk(1.2), jog(2.5), run(4.0), sprint(6.0), bike(8.0)
 # 也可以直接写数字 (m/s)
-speed: 3.0
+speed: 3.3
 
 # 更新间隔 (秒) — 越小越平滑，1.0 已足够
 interval: 1.0
@@ -16,7 +16,7 @@ interval: 1.0
 loop: true
 
 # 坐标偏移抖动 (米) — 让轨迹更自然，0 则完全沿路线
-noise: 3.0
+noise: 2.0
 
 # 连接方式:
 #   "adb"        — adb emu geo fix (标准Android模拟器)

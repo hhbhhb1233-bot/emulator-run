@@ -9,12 +9,12 @@ echo  by HuskyDG - Kitsune Version
 echo ========================================
 echo.
 
-set PATH=C:\Program Files\Netease\MuMu\nx_device\12.0\shell;%PATH%
+set PATH=%~dp0雷电模拟器;C:\Program Files\LDPlayer9;%PATH%
 adb devices
 
 REM Environment check & device connection
 echo [CHECK] Checking ADB connection status...
-adb devices | findstr "device" > nul
+adb devices | findstr /R "device$" > nul
 if errorlevel 1 (
     echo ! No ADB device detected
     echo ! Please ensure emulator is running and debugging is enabled
@@ -23,8 +23,8 @@ if errorlevel 1 (
 )
 
 echo [CHECK] Getting device information...
-for /f "tokens=*" %%i in ('adb shell getprop ro.product.cpu.abi') do set ABI=%%i
-for /f "tokens=*" %%i in ('adb shell getprop ro.build.version.sdk') do set API=%%i
+for /f "tokens=1 delims= " %%i in ('adb shell getprop ro.product.cpu.abi') do set "ABI=%%i"
+for /f "tokens=1 delims= " %%i in ('adb shell getprop ro.build.version.sdk') do set "API=%%i"
 echo - Device platform: %ABI%
 echo - API Level: %API%
 
@@ -41,8 +41,8 @@ if not errorlevel 1 (
 REM File preparation & permission acquisition
 echo.
 echo [PREPARE] Checking installation files...
-if not exist "Kitsune-Mask-debug-27.0" (
-    echo ! Cannot find Kitsune-Mask-debug-27.0 directory
+if not exist "kitsune_extracted" (
+    echo ! Cannot find kitsune_extracted directory
     echo ! Please ensure APK is extracted or directory exists
     pause
     exit /b 1
@@ -54,33 +54,33 @@ adb shell mkdir -p /data/local/tmp/magisk_install
 REM File transfer to Android device - directly use extracted directory
 echo.
 echo [TRANSFER] Pushing installation files to device...
-if exist "Kitsune-Mask-debug-27.0\assets" (
+if exist "kitsune_extracted\assets" (
     echo [TRANSFER] Pushing assets directory...
-    adb push "Kitsune-Mask-debug-27.0\assets" /data/local/tmp/magisk_install/
+    adb push "kitsune_extracted\assets" /data/local/tmp/magisk_install/
 ) else (
     echo ! Cannot find assets directory
     pause
     exit /b 1
 )
 
-if exist "Kitsune-Mask-debug-27.0\lib\%ABI%" (
+if exist "kitsune_extracted\lib\%ABI%" (
     echo [TRANSFER] Pushing lib/%ABI% directory...
-    adb push "Kitsune-Mask-debug-27.0\lib\%ABI%" /data/local/tmp/magisk_install/lib/
+    adb push "kitsune_extracted\lib\%ABI%" /data/local/tmp/magisk_install/lib/
 ) else (
     echo ! Cannot find lib/%ABI% directory
     echo ! Supported architectures: arm64-v8a, x86_64, x86, armeabi-v7a
     echo ! Current directory structure:
-    if exist "Kitsune-Mask-debug-27.0\lib" (
-        dir "Kitsune-Mask-debug-27.0\lib" /b
+    if exist "kitsune_extracted\lib" (
+        dir "kitsune_extracted\lib" /b
     )
     pause
     exit /b 1
 )
 
-if exist "Kitsune-Mask-debug-27.0\res\raw\manager.sh" (
+if exist "kitsune_extracted\res\raw\manager.sh" (
     echo [TRANSFER] Pushing manager.sh...
     adb shell mkdir -p /data/local/tmp/magisk_install/res/raw/
-    adb push "Kitsune-Mask-debug-27.0\res\raw\manager.sh" /data/local/tmp/magisk_install/res/raw/
+    adb push "kitsune_extracted\res\raw\manager.sh" /data/local/tmp/magisk_install/res/raw/
 ) else (
     echo ! Cannot find manager.sh file, continuing installation...
 )

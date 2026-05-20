@@ -214,63 +214,7 @@ random_str(){
     tr -dc A-Za-z0-9 </dev/urandom | head -c $(($FROM+$(($RANDOM%$(($TO-$FROM+1))))))
 }
 
-# magiskrc generation (from manager.sh)
-magiskrc(){
-    local MAGISKTMP="$1"
-    local magisk_name="$2"
-    [ -z "$magisk_name" ] && magisk_name=magisk32
-    [ "$IS64BIT" = true ] && [ -z "$2" ] && magisk_name=magisk64
-    
-cat <<EOF
-on post-fs-data
-    start logd
-    exec u:r:su:s0 root root -- $MAGISKSYSTEMDIR/magiskpolicy --live --magisk
-    exec u:r:magisk:s0 root root -- $MAGISKSYSTEMDIR/magiskpolicy --live --magisk
-    exec u:r:update_engine:s0 root root -- $MAGISKSYSTEMDIR/magiskpolicy --live --magisk
-    exec u:r:su:s0 root root -- $MAGISKSYSTEMDIR/$magisk_name --auto-selinux --setup-sbin $MAGISKSYSTEMDIR $MAGISKTMP
-    exec u:r:su:s0 root root -- $MAGISKTMP/magisk --auto-selinux --post-fs-data
-on nonencrypted
-    exec u:r:su:s0 root root -- $MAGISKTMP/magisk --auto-selinux --service
-on property:vold.decrypt=trigger_restart_framework
-    exec u:r:su:s0 root root -- $MAGISKTMP/magisk --auto-selinux --service
-on property:sys.boot_completed=1
-    mkdir /data/adb/magisk 755
-    exec u:r:su:s0 root root -- $MAGISKTMP/magisk --auto-selinux --boot-complete
-   
-on property:init.svc.zygote=restarting
-    exec u:r:su:s0 root root -- $MAGISKTMP/magisk --auto-selinux --zygote-restart
-   
-on property:init.svc.zygote=stopped
-    exec u:r:su:s0 root root -- $MAGISKTMP/magisk --auto-selinux --zygote-restart
-EOF
-}
-
 # Backup and restore functions
-backup_restore(){
-    # if gz is not found and orig file is found, backup to gz
-    if [ ! -f "${1}.gz" ] && [ -f "$1" ]; then
-        gzip -k "$1" && return 0
-    elif [ -f "${1}.gz" ]; then
-    # if gz found, restore from gz
-        rm -rf "$1" && gzip -kdf "${1}.gz" && return 0
-    fi
-    return 1
-}
-
-restore_from_bak(){
-    backup_restore "$1" && rm -rf "${1}.gz"
-}
-
-cleanup_system_installation(){
-    rm -rf "$MIRRORDIR${MAGISKSYSTEMDIR}"
-    rm -rf "$MIRRORDIR${MAGISKSYSTEMDIR}.rc"
-    backup_restore "$MIRRORDIR/system/etc/init/bootanim.rc" \
-    && rm -rf "$MIRRORDIR/system/etc/init/bootanim.rc.gz"
-    if [ -e "$MIRRORDIR${MAGISKSYSTEMDIR}" ] || [ -e "$MIRRORDIR${MAGISKSYSTEMDIR}.rc" ]; then
-        return 1
-    fi
-}
-
 backup_restore(){
     # if gz is not found and orig file is found, backup to gz
     if [ ! -f "${1}.gz" ] && [ -f "$1" ]; then
@@ -301,7 +245,7 @@ magiskrc(){
     local magisk_name="magisk64"
     [ "$ABI" = "x86" ] && magisk_name="magisk32"
     [ "$ABI" = "armeabi-v7a" ] && magisk_name="magisk32"
-    
+
 cat <<EOF
 on post-fs-data
     start logd
@@ -317,10 +261,10 @@ on property:vold.decrypt=trigger_restart_framework
 on property:sys.boot_completed=1
     mkdir /data/adb/magisk 755
     exec u:r:su:s0 root root -- $MAGISKTMP/magisk --auto-selinux --boot-complete
-   
+
 on property:init.svc.zygote=restarting
     exec u:r:su:s0 root root -- $MAGISKTMP/magisk --auto-selinux --zygote-restart
-   
+
 on property:init.svc.zygote=stopped
     exec u:r:su:s0 root root -- $MAGISKTMP/magisk --auto-selinux --zygote-restart
 EOF

@@ -126,15 +126,16 @@ def load_route(filepath: str) -> list:
     return points
 
 
-def interpolate_route(points: list, speed: float, interval: float) -> list:
+def interpolate_route(points: list, speed: float, interval: float, loop: bool = True) -> list:
     """按速度插值，生成等距路径点"""
     step_distance = speed * interval
     if step_distance <= 0:
         step_distance = 1.0  # 防除零，fallback 到 1m/步
     result = []
     n = len(points)
+    segments = n if loop else n - 1
 
-    for i in range(n):
+    for i in range(segments):
         a = points[i]
         b = points[(i + 1) % n]
         dist = geodesic((a[1], a[0]), (b[1], b[0])).m
@@ -145,6 +146,9 @@ def interpolate_route(points: list, speed: float, interval: float) -> list:
             lng = a[0] + (b[0] - a[0]) * t
             lat = a[1] + (b[1] - a[1]) * t
             result.append((lng, lat))
+
+    if not loop and points:
+        result.append(points[-1])
 
     return result
 
@@ -200,20 +204,21 @@ class LocationSender:
             "D:/Program Files/LDPlayer8/adb.exe",
             str(Path.home() / "AppData/Local/Android/Sdk/platform-tools/adb.exe"),
             str(Path.home() / "AppData/Local/LDPlayer9/adb.exe"),
+            # 便携版 LDPlayer
+            str(Path(__file__).parent.parent.parent.parent / "雷电模拟器/adb.exe"),
         ]
         # 从注册表获取安装路径
-        reg_paths = self._find_from_registry()
+        reg_paths = [str(Path(d) / "adb.exe") for d in self._find_from_registry()]
         candidates = reg_paths + candidates
-        # 全盘搜索（在已有候选路径之后）
-        if not any(candidates):
-            candidates += self._scan_drives("adb.exe")
+        # 全盘搜索（作为兜底）
+        candidates += self._scan_drives("adb.exe")
         for c in candidates:
             try:
                 subprocess.run([c, "version"], capture_output=True, timeout=2)
                 return c
             except (FileNotFoundError, subprocess.TimeoutExpired):
                 continue
-        return "adb"  # fallback，可能在 PATH 里
+        return None
 
     def _find_ldconsole(self):
         """查找 ldconsole 可执行文件"""
@@ -225,13 +230,14 @@ class LocationSender:
             "D:/Program Files/LDPlayer9/ldconsole.exe",
             "D:/Program Files/LDPlayer8/ldconsole.exe",
             str(Path.home() / "AppData/Local/LDPlayer9/ldconsole.exe"),
+            # 便携版 LDPlayer
+            str(Path(__file__).parent.parent.parent.parent / "雷电模拟器/ldconsole.exe"),
         ]
         # 从注册表获取安装路径
-        reg_paths = self._find_from_registry()
+        reg_paths = [str(Path(d) / "ldconsole.exe") for d in self._find_from_registry()]
         candidates = reg_paths + candidates
-        # 全盘搜索
-        if not any(candidates):
-            candidates += self._scan_drives("ldconsole.exe")
+        # 全盘搜索（作为兜底）
+        candidates += self._scan_drives("ldconsole.exe")
         for c in candidates:
             try:
                 subprocess.run([c, "list"], capture_output=True, timeout=2)
@@ -242,7 +248,7 @@ class LocationSender:
 
     def _find_from_registry(self) -> list:
         """从 Windows 注册表查找 LDPlayer 安装路径"""
-        paths = []
+        dirs = []
         try:
             import winreg
             keys = [
@@ -256,15 +262,12 @@ class LocationSender:
                     with winreg.OpenKey(hive, key_path) as key:
                         install_dir, _ = winreg.QueryValueEx(key, "InstallDir")
                         if install_dir:
-                            adb = str(Path(install_dir) / "adb.exe")
-                            ldconsole = str(Path(install_dir) / "ldconsole.exe")
-                            paths.append(adb)
-                            paths.append(ldconsole)
+                            dirs.append(str(Path(install_dir)))
                 except (FileNotFoundError, OSError):
                     continue
         except ImportError:
             pass
-        return paths
+        return dirs
 
     @staticmethod
     def _scan_drives(exe_name: str) -> list:
@@ -351,9 +354,11 @@ def add_noise(lng: float, lat: float, noise_meters: float) -> tuple:
 
 def print_info(points, speed, interval, loop):
     total_dist = 0
-    for i in range(len(points)):
+    n = len(points)
+    segments = n if loop else n - 1
+    for i in range(segments):
         a = points[i]
-        b = points[(i + 1) % len(points)]
+        b = points[(i + 1) % n]
         total_dist += geodesic((a[1], a[0]), (b[1], b[0])).m
 
     lap_time = total_dist / speed if speed > 0 else 0
@@ -373,7 +378,7 @@ def main():
     parser.add_argument("--speed", type=float, help="速度 m/s (覆盖 config.yaml)")
     parser.add_argument("--interval", type=float, help="更新间隔秒 (覆盖 config.yaml)")
     parser.add_argument("--method", choices=["adb", "ldconsole", "auto"], help="定位方式")
-    parser.add_argument("--no-loop", dest="loop", action="store_false", help="不循环")
+    parser.add_argument("--no-loop", dest="loop", action="store_false", default=None, help="不循环")
     parser.add_argument("--noise", type=float, help="抖动偏移米数 (覆盖 config.yaml)")
     parser.add_argument("--dry-run", action="store_true", help="仅测试，不发送定位")
     args = parser.parse_args()
@@ -412,7 +417,7 @@ def main():
     raw_points = load_route(route_file)
     print(f"[路线] 已加载 {len(raw_points)} 个原始路径点")
 
-    wgs_points = interpolate_route(raw_points, speed, interval)
+    wgs_points = interpolate_route(raw_points, speed, interval, loop)
     print_info(wgs_points, speed, interval, loop)
 
     dry_run = args.dry_run
@@ -456,8 +461,11 @@ def main():
                 # 叠加每圈偏移 + 可变噪声 (0.5~base_noise*2 m)
                 olng = lng + lap_offset_lng
                 olat = lat + lap_offset_lat
-                actual_noise = random.uniform(0.5, max(noise * 2, 1.0))
-                nlng, nlat = add_noise(olng, olat, actual_noise)
+                if noise > 0:
+                    actual_noise = random.uniform(0.5, max(noise * 2, 1.0))
+                    nlng, nlat = add_noise(olng, olat, actual_noise)
+                else:
+                    nlng, nlat = olng, olat
 
                 if dry_run:
                     if idx % 10 == 0 or idx == len(wgs_points) - 1:

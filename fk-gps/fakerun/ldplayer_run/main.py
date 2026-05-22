@@ -295,6 +295,16 @@ class LocationSender:
     def _find_from_process() -> list:
         """从正在运行的 LDPlayer 进程推断安装目录"""
         dirs = []
+
+        def _decode(output: bytes) -> str:
+            """尝试用系统编码解码，兼容中文 Windows (GBK) 和英文系统 (UTF-8)"""
+            for enc in ["gbk", "utf-8", "cp936"]:
+                try:
+                    return output.decode(enc)
+                except (UnicodeDecodeError, LookupError):
+                    continue
+            return output.decode("utf-8", errors="replace")
+
         try:
             import subprocess
             cmd = [
@@ -303,7 +313,7 @@ class LocationSender:
                 "| Select-Object -ExpandProperty Path"
             ]
             out = subprocess.check_output(cmd, timeout=5, stderr=subprocess.DEVNULL)
-            for line in out.decode("utf-8", errors="replace").strip().splitlines():
+            for line in _decode(out).strip().splitlines():
                 line = line.strip()
                 if line and line.endswith(".exe"):
                     d = str(Path(line).parent)
@@ -318,7 +328,7 @@ class LocationSender:
                     ["wmic", "process", "where", "name='dnplayer.exe'", "get", "ExecutablePath"],
                     timeout=5, stderr=subprocess.DEVNULL
                 )
-                for line in out.decode("utf-8", errors="replace").strip().splitlines():
+                for line in _decode(out).strip().splitlines():
                     line = line.strip()
                     if line and line.endswith(".exe") and not line.startswith("ExecutablePath"):
                         d = str(Path(line).parent)

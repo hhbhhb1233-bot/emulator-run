@@ -214,12 +214,16 @@ class LocationSender:
             "D:/Program Files/LDPlayer8/adb.exe",
             str(Path.home() / "AppData/Local/Android/Sdk/platform-tools/adb.exe"),
             str(Path.home() / "AppData/Local/LDPlayer9/adb.exe"),
+            str(Path.home() / "AppData/Local/LDPlayer8/adb.exe"),
             # 便携版 LDPlayer
             str(Path(__file__).parent.parent.parent.parent / "雷电模拟器/adb.exe"),
         ]
         # 从注册表获取安装路径
         reg_paths = [str(Path(d) / "adb.exe") for d in self._find_from_registry()]
         candidates = reg_paths + candidates
+        # 从正在运行的进程推断安装目录
+        proc_paths = [str(Path(d) / "adb.exe") for d in self._find_from_process()]
+        candidates = proc_paths + candidates
         # 全盘搜索（作为兜底）
         candidates += self._scan_drives("adb.exe")
         for c in candidates:
@@ -240,12 +244,16 @@ class LocationSender:
             "D:/Program Files/LDPlayer9/ldconsole.exe",
             "D:/Program Files/LDPlayer8/ldconsole.exe",
             str(Path.home() / "AppData/Local/LDPlayer9/ldconsole.exe"),
+            str(Path.home() / "AppData/Local/LDPlayer8/ldconsole.exe"),
             # 便携版 LDPlayer
             str(Path(__file__).parent.parent.parent.parent / "雷电模拟器/ldconsole.exe"),
         ]
         # 从注册表获取安装路径
         reg_paths = [str(Path(d) / "ldconsole.exe") for d in self._find_from_registry()]
         candidates = reg_paths + candidates
+        # 从正在运行的进程推断安装目录
+        proc_paths = [str(Path(d) / "ldconsole.exe") for d in self._find_from_process()]
+        candidates = proc_paths + candidates
         # 全盘搜索（作为兜底）
         candidates += self._scan_drives("ldconsole.exe")
         for c in candidates:
@@ -266,6 +274,10 @@ class LocationSender:
                 (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\LDPlayer\LDPlayer8"),
                 (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\LDPlayer\LDPlayer9"),
                 (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\LDPlayer\LDPlayer8"),
+                (winreg.HKEY_CURRENT_USER, r"SOFTWARE\LDPlayer\LDPlayer9"),
+                (winreg.HKEY_CURRENT_USER, r"SOFTWARE\LDPlayer\LDPlayer8"),
+                (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\LDPlayer\LDPlayer"),
+                (winreg.HKEY_CURRENT_USER, r"SOFTWARE\LDPlayer\LDPlayer"),
             ]
             for hive, key_path in keys:
                 try:
@@ -280,27 +292,91 @@ class LocationSender:
         return dirs
 
     @staticmethod
+    def _find_from_process() -> list:
+        """从正在运行的 LDPlayer 进程推断安装目录"""
+        dirs = []
+        try:
+            import subprocess
+            cmd = [
+                "powershell", "-NoProfile", "-Command",
+                "Get-Process dnplayer,ldconsole,ldplayerbox,ldemulator -ErrorAction SilentlyContinue "
+                "| Select-Object -ExpandProperty Path"
+            ]
+            out = subprocess.check_output(cmd, timeout=5, stderr=subprocess.DEVNULL)
+            for line in out.decode("utf-8", errors="replace").strip().splitlines():
+                line = line.strip()
+                if line and line.endswith(".exe"):
+                    d = str(Path(line).parent)
+                    if d not in dirs:
+                        dirs.append(d)
+        except Exception:
+            pass
+        # 也尝试 wmic 兜底
+        if not dirs:
+            try:
+                out = subprocess.check_output(
+                    ["wmic", "process", "where", "name='dnplayer.exe'", "get", "ExecutablePath"],
+                    timeout=5, stderr=subprocess.DEVNULL
+                )
+                for line in out.decode("utf-8", errors="replace").strip().splitlines():
+                    line = line.strip()
+                    if line and line.endswith(".exe") and not line.startswith("ExecutablePath"):
+                        d = str(Path(line).parent)
+                        if d not in dirs:
+                            dirs.append(d)
+            except Exception:
+                pass
+        return dirs
+
+    @staticmethod
     def _scan_drives(exe_name: str) -> list:
-        """全盘搜索 ldconsole 或 adb（只在根目录的 Program Files 下找，不深搜）"""
+        """全盘搜索 ldconsole 或 adb"""
         import string
         results = []
         for letter in string.ascii_uppercase:
             drive = f"{letter}:"
             if not Path(drive).exists():
                 continue
-            base = Path(drive) / "Program Files"
-            if base.exists():
-                for ld_dir in base.glob("LDPlayer*"):
-                    target = ld_dir / exe_name
-                    if target.exists():
-                        results.append(str(target))
-            # 也搜 Program Files (x86)
-            base86 = Path(drive) / "Program Files (x86)"
-            if base86.exists():
-                for ld_dir in base86.glob("LDPlayer*"):
-                    target = ld_dir / exe_name
-                    if target.exists():
-                        results.append(str(target))
+
+            # 搜索各磁盘常见位置
+            search_roots = [
+                Path(drive) / "Program Files",
+                Path(drive) / "Program Files (x86)",
+                Path(drive),                              # 根目录
+                Path(drive) / "LDPlayer",
+                Path(drive) / "LDPlayer9",
+                Path(drive) / "LDPlayer8",
+                Path(drive) / "雷电模拟器",
+                Path(drive) / "leidian",
+            ]
+            seen = set()
+            for root in search_roots:
+                if not root.exists():
+                    continue
+                for ld_dir in root.glob("LDPlayer*"):
+                    if ld_dir.is_dir():
+                        target = ld_dir / exe_name
+                        if target.exists() and str(target) not in seen:
+                            results.append(str(target))
+                            seen.add(str(target))
+                # 直接检查根目录下是否有目标文件
+                direct = root / exe_name
+                if direct.exists() and str(direct) not in seen:
+                    results.append(str(direct))
+                    seen.add(str(direct))
+
+        # 也搜 %LOCALAPPDATA% 和 %APPDATA%
+        for env_var in ["LOCALAPPDATA", "APPDATA"]:
+            base = Path.home().parent / env_var if env_var == "APPDATA" else Path.home() / "AppData/Local"
+            # 上面这行简化为直接用 Path.home()
+            appdata = Path.home() / "AppData" / ("Local" if env_var == "LOCALAPPDATA" else "Roaming")
+            if appdata.exists():
+                for ld_dir in appdata.glob("LDPlayer*"):
+                    if ld_dir.is_dir():
+                        target = ld_dir / exe_name
+                        if target.exists() and str(target) not in seen:
+                            results.append(str(target))
+                            seen.add(str(target))
         return results
 
     def _adb_cmd(self):

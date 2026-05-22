@@ -184,14 +184,24 @@ class LocationSender:
                 print(f"[定位] 使用 ADB ({adb})")
                 return
 
-            print("[警告] 未找到 ldconsole 或 adb，将尝试裸调 adb")
-            self.method = "adb"
+            print("[错误] 未找到 ldconsole 或 adb，无法连接模拟器")
+            print("       请确保已安装雷电模拟器，或将雷电模拟器目录放在本脚本同级目录下")
+            sys.exit(1)
         elif self.method == "ldconsole":
             self.ldconsole_path = self._find_ldconsole()
             if self.ldconsole_path:
                 print(f"[定位] 使用 ldconsole ({self.ldconsole_path})")
+            else:
+                print("[错误] 指定了 --method ldconsole，但系统中未找到 ldconsole")
+                sys.exit(1)
         elif self.method == "adb":
             self.adb_path = self._find_adb()
+            if self.adb_path:
+                print(f"[定位] 使用 ADB ({self.adb_path})")
+            else:
+                print("[错误] 指定了 --method adb，但系统中未找到 adb 可执行文件")
+                print("       请安装 ADB 或使用 --method auto")
+                sys.exit(1)
 
     def _find_adb(self):
         """查找 adb 可执行文件"""
@@ -294,7 +304,11 @@ class LocationSender:
         return results
 
     def _adb_cmd(self):
-        cmd = [self.adb_path or self._find_adb()]
+        adb = self.adb_path or self._find_adb()
+        if not adb:
+            print("[错误] adb 未找到，无法发送定位")
+            sys.exit(1)
+        cmd = [adb]
         if self.device_serial:
             cmd += ["-s", self.device_serial]
         return cmd
